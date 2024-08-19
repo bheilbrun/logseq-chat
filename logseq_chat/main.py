@@ -47,13 +47,13 @@ def set_verbosity(verbose: bool, debug: bool) -> None:
     logging.getLogger("httpcore").setLevel(logging.WARNING)
 
 
-def load_dir(data_dir: str) -> List[Document]:
+def load_dir(data_dir: str, glob: str) -> List[Document]:
     """
     Load Logseq data from the given directory. Returns list of Langchain Documents.
     """
     loader = DirectoryLoader(
         data_dir,
-        glob="**/H100 Testing.md",
+        glob=glob,
         loader_cls=LogseqMarkdownLoader,
         show_progress=_verbose,
     )
@@ -142,6 +142,7 @@ def schedule_observer(
     record_manager: RecordManager,
     splitter: TextSplitter,
     data_dir: str,
+    glob: str,
 ) -> BaseObserver:
     """Starts and returns a watchdog Observer which watches for file changes."""
     event_handler = IndexingEventHandler(
@@ -149,6 +150,7 @@ def schedule_observer(
         record_manager,
         loader_cls=LogseqMarkdownLoader,
         splitter=splitter,
+        glob=glob,
     )
     observer = Observer()
     print(f"Watching directory: {data_dir}")
@@ -247,9 +249,10 @@ def interactive_loop(vector_store: VectorStore) -> None:
 @click.option(
     "--data-dir", default=".", help="Directory containing Logseq data (markdown files)"
 )
+@click.option("--glob", default="**/*.md", help="Glob pattern for files to load")
 @click.option("--verbose", is_flag=True, default=True, help="Enable verbose logging")
 @click.option("--debug", is_flag=True, default=False, help="Enable debug logging")
-def main(data_dir: str, verbose: bool, debug: bool) -> None:
+def main(data_dir: str, glob: str, verbose: bool, debug: bool) -> None:
     load_dotenv()
     set_verbosity(verbose, debug)
     vector_store = get_vector_store()
@@ -262,9 +265,10 @@ def main(data_dir: str, verbose: bool, debug: bool) -> None:
         record_manager,
         splitter,
         data_dir,
+        glob,
     )
     try:
-        docs = load_dir(data_dir)
+        docs = load_dir(data_dir, glob)
         print(f"Loaded {len(docs)} docs")
         chunks = split_docs(splitter, docs)
         print(f"Split into {len(chunks)} chunks")

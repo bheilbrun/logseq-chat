@@ -1,3 +1,4 @@
+import fnmatch
 import logging
 from typing import Optional, Type
 
@@ -19,12 +20,14 @@ class IndexingEventHandler(FileSystemEventHandler):
         record_manager: RecordManager,
         loader_cls: Type[TextLoader],
         splitter: TextSplitter,
+        glob: str,
     ) -> None:
         super().__init__()
         self._vector_store = vector_store
         self._record_manager = record_manager
         self._loader_cls = loader_cls
         self._splitter = splitter
+        self._glob = glob
 
     def _load_file(self, path: str) -> Optional[Document]:
         docs = self._loader_cls(path).load()
@@ -61,6 +64,8 @@ class IndexingEventHandler(FileSystemEventHandler):
         # TODO: if a directory moves, do we get events for all the files in it?
         if event.is_directory:
             return
+        if not fnmatch.fnmatch(event.dest_path, self._glob):
+            return
 
         logging.debug(f"file move: from {event.src_path} to {event.dest_path}")
         self._delete_file(event.src_path)
@@ -68,15 +73,24 @@ class IndexingEventHandler(FileSystemEventHandler):
 
     def on_created(self, event: FileSystemEvent) -> None:
         """On file creation, index the new file."""
+        if not fnmatch.fnmatch(event.src_path, self._glob):
+            return
+
         logging.debug(f"file created: {event.src_path}")
         self._index_file(event.src_path)
 
     def on_deleted(self, event: FileSystemEvent) -> None:
         """On file deletion, remove the file from the index."""
+        if not fnmatch.fnmatch(event.src_path, self._glob):
+            return
+
         logging.debug(f"file deleted: {event.src_path}")
         self._delete_file(event.src_path)
 
     def on_modified(self, event: FileSystemEvent) -> None:
         """On file modification, re-index the file."""
+        if not fnmatch.fnmatch(event.src_path, self._glob):
+            return
+
         logging.debug(f"file modified: {event.src_path}")
         self._index_file(event.src_path)
