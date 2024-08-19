@@ -21,6 +21,7 @@ from langchain_core.indexing import RecordManager
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain_core.vectorstores.base import VectorStoreRetriever
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_text_splitters import TextSplitter
 from watchdog.observers import Observer
@@ -62,7 +63,9 @@ def load_dir(data_dir: str, glob: str) -> List[Document]:
     return docs
 
 
-# Default chunk size for splitting Logseq data as measured by Python len() function.
+# Default chunk size for splitting Logseq data.
+# Measured in "characters" as defined by Python len() function.
+# Note: there are roughly 4 chars per token in English text.
 DEFAULT_CHUNK_SIZE_CHARS = 4096
 
 
@@ -193,6 +196,30 @@ SYSTEM_PROMPT = (
     "{context}"
 )
 
+QUERY_REWRITE_SYSTEM_PROMPT = """\
+You are a helpful assistant that rewrites user questions to optimize for document retrieval. Your task:
+
+1. Analyze the user's question and chat history.
+2. Rewrite the question to be self-contained and context-aware.
+3. Optimize for similarity search:
+   - Use clear, concise language
+   - Include relevant keywords
+   - Expand acronyms when needed
+4. Maintain the original intent and meaning.
+5. Don't add information not implied by the question or chat history.
+
+Provide only the rewritten question, without explanations.
+
+Example:
+Question: "What were its key features?"
+History: 
+- User: "Tell me about the iPhone 12."
+- Assistant: "The iPhone 12 was released in 2020..."
+- User: "What were its key features?"
+
+Rewritten: "What were the key features of the iPhone 12 released in 2020?"
+"""
+
 # TODO: make this configurable.
 # TODO: consider summarizing the chat history when over the message limit.
 CHAT_HISTORY_MESSAGES_LIMIT = 10
@@ -200,20 +227,42 @@ assert (
     CHAT_HISTORY_MESSAGES_LIMIT % 2 == 0
 ), "Langchain's Anthropic support breaks down if given an odd number of messages"
 
+# Number of documents to retrieve and send to the LLM.
+RETRIEVAL_TOP_K = 10
+
 
 def interactive_loop(vector_store: VectorStore) -> None:
     """Runs the interactive REPL loop until the user exits."""
     llm = get_llm()
-    retriever = vector_store.as_retriever()
+    retriever: VectorStoreRetriever = vector_store.as_retriever()
     chat_history_store = InMemoryChatMessageHistory()
-    prompt = ChatPromptTemplate.from_messages(
-        [
-            ("system", SYSTEM_PROMPT),
-            MessagesPlaceholder("chat_history"),
-            ("human", "{input}"),
-        ]
+
+    # Chain to rewrite user's query for improved document retrieval performance.
+    # TODO: use cheaper/faster LLM for query rewrites vs chat.
+    query_rewrite_chain = (
+        ChatPromptTemplate.from_messages(
+            [
+                ("system", QUERY_REWRITE_SYSTEM_PROMPT),
+                MessagesPlaceholder("chat_history"),
+                ("human", "{input}"),
+            ]
+        )
+        | llm
+        | StrOutputParser()
     )
-    rag_qa_chain = prompt | llm | StrOutputParser()
+
+    # Chain to answer the user's query using chat history and retrieved documents.
+    chat_chain = (
+        ChatPromptTemplate.from_messages(
+            [
+                ("system", SYSTEM_PROMPT),
+                MessagesPlaceholder("chat_history"),
+                ("human", "{input}"),
+            ]
+        )
+        | llm
+        | StrOutputParser()
+    )
 
     click.echo("Enter 'exit', 'quit' or ctrl-d to quit.")
     while True:
@@ -223,16 +272,20 @@ def interactive_loop(vector_store: VectorStore) -> None:
         if query.strip().lower() in ("exit", "quit"):
             break
 
-        rag_context = retriever.invoke(query)
         chat_history = chat_history_store.messages[:CHAT_HISTORY_MESSAGES_LIMIT]
-        resp_iter = rag_qa_chain.stream(
+        retrieval_query = query_rewrite_chain.invoke(
+            {"input": query, "chat_history": chat_history}
+        )
+        logging.debug("Rewritten retrieval query: %s", retrieval_query)
+        docs = retriever.invoke(retrieval_query, k=RETRIEVAL_TOP_K)
+
+        resp_iter = chat_chain.stream(
             {
-                "context": _format_docs(rag_context),
+                "context": _format_docs(docs),
                 "chat_history": chat_history,
                 "input": query,
             }
         )
-
         full_resp = ""
         for chunk in resp_iter:
             print(chunk, end="", flush=True)
