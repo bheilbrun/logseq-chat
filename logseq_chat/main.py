@@ -1,6 +1,7 @@
 import logging
 import os
 import textwrap
+from hashlib import sha256
 from typing import List
 
 import click
@@ -8,7 +9,6 @@ import faiss
 from dotenv import load_dotenv
 from langchain.embeddings import CacheBackedEmbeddings
 from langchain.globals import set_debug, set_verbose
-from langchain.indexes import SQLRecordManager, index
 from langchain.storage import LocalFileStore
 from langchain_anthropic import ChatAnthropic
 from langchain_community.docstore.in_memory import InMemoryDocstore
@@ -17,17 +17,16 @@ from langchain_community.vectorstores import FAISS, VectorStore
 from langchain_community.vectorstores.utils import DistanceStrategy
 from langchain_core.chat_history import InMemoryChatMessageHistory
 from langchain_core.documents import Document
-from langchain_core.indexing import RecordManager
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
-from langchain_core.vectorstores.base import VectorStoreRetriever
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_text_splitters import TextSplitter
 from watchdog.observers import Observer
 from watchdog.observers.api import BaseObserver
 
 from logseq_chat.event_handler import IndexingEventHandler
+from logseq_chat.index import HybridSearchIndex
 from logseq_chat.loader import LogseqMarkdownLoader
 from logseq_chat.splitter import LogseqMarkdownSplitter
 
@@ -61,6 +60,13 @@ def load_dir(data_dir: str, glob: str) -> List[Document]:
     docs = loader.load()
     logging.debug("First doc: %s", textwrap.shorten(str(docs[0]), width=72))
     return docs
+
+
+def doc_id_func(doc: Document) -> str:
+    """Hash a document. Excludes the id field to allow for stable id generation.
+    This should be a feature of the Document class, but it's not. If it's
+    replaced with a local abstraction that can be fixed."""
+    return sha256(doc.json(exclude={"id"}).encode()).hexdigest()
 
 
 # Default chunk size for splitting Logseq data.
@@ -103,28 +109,6 @@ def get_vector_store(
     return vector_store
 
 
-RECORD_MANAGER_CACHE_FILE: str = ".cache/record_manager_cache.sql"
-
-
-def get_record_manager(vector_store: VectorStore) -> RecordManager:
-    """
-    Returns a RecordManager for the given VectorStore.
-
-    This is Langchain's API for indexing.
-
-    TODO: replace due to its limitations.
-    """
-    namespace = f"{vector_store.__class__.__name__}/{MODEL_NAME}/logseq"
-    # Start from scratch each time to avoid out-of-sync issues with the vector store.
-    if os.path.exists(RECORD_MANAGER_CACHE_FILE):
-        os.remove(RECORD_MANAGER_CACHE_FILE)
-    record_manager = SQLRecordManager(
-        namespace, db_url=f"sqlite:///{RECORD_MANAGER_CACHE_FILE}"
-    )
-    record_manager.create_schema()
-    return record_manager
-
-
 def get_llm() -> BaseChatModel:
     """Checks for API keys in the environment and returns an appropriate LLM."""
     if os.environ.get("ANTHROPIC_API_KEY"):
@@ -141,16 +125,14 @@ def get_llm() -> BaseChatModel:
 
 
 def schedule_observer(
-    vector_store: VectorStore,
-    record_manager: RecordManager,
+    search_index: HybridSearchIndex,
     splitter: TextSplitter,
     data_dir: str,
     glob: str,
 ) -> BaseObserver:
     """Starts and returns a watchdog Observer which watches for file changes."""
     event_handler = IndexingEventHandler(
-        vector_store,
-        record_manager,
+        search_index,
         loader_cls=LogseqMarkdownLoader,
         splitter=splitter,
         glob=glob,
@@ -231,10 +213,9 @@ assert (
 RETRIEVAL_TOP_K = 10
 
 
-def interactive_loop(vector_store: VectorStore) -> None:
+def interactive_loop(search_index: HybridSearchIndex) -> None:
     """Runs the interactive REPL loop until the user exits."""
     llm = get_llm()
-    retriever: VectorStoreRetriever = vector_store.as_retriever()
     chat_history_store = InMemoryChatMessageHistory()
 
     # Chain to rewrite user's query for improved document retrieval performance.
@@ -277,7 +258,7 @@ def interactive_loop(vector_store: VectorStore) -> None:
             {"input": query, "chat_history": chat_history}
         )
         logging.debug("Rewritten retrieval query: %s", retrieval_query)
-        docs = retriever.invoke(retrieval_query, k=RETRIEVAL_TOP_K)
+        docs = search_index.search(retrieval_query, RETRIEVAL_TOP_K)
 
         resp_iter = chat_chain.stream(
             {
@@ -309,13 +290,13 @@ def main(data_dir: str, glob: str, verbose: bool, debug: bool) -> None:
     load_dotenv()
     set_verbosity(verbose, debug)
     vector_store = get_vector_store()
-    record_manager = get_record_manager(vector_store)
+    search_index = HybridSearchIndex(vector_store, doc_id_func)
+    # record_manager = get_record_manager(vector_store)
     splitter = LogseqMarkdownSplitter(
-        chunk_size=DEFAULT_CHUNK_SIZE_CHARS, chunk_overlap=0
+        id_func=doc_id_func, chunk_size=DEFAULT_CHUNK_SIZE_CHARS, chunk_overlap=0
     )
     observer = schedule_observer(
-        vector_store,
-        record_manager,
+        search_index,
         splitter,
         data_dir,
         glob,
@@ -325,17 +306,11 @@ def main(data_dir: str, glob: str, verbose: bool, debug: bool) -> None:
         print(f"Loaded {len(docs)} docs")
         chunks = split_docs(splitter, docs)
         print(f"Split into {len(chunks)} chunks")
-        index_result = index(
-            chunks,
-            record_manager,
-            vector_store,
-            cleanup="full",
-            source_id_key="source",
-        )
-        print(f"Initial indexing results: {index_result}")
+        search_index.add_documents(chunks)
+        print(f"Indexed {len(chunks)} chunks")
 
         # enter the main repl loop and block until the user exits
-        interactive_loop(vector_store)
+        interactive_loop(search_index)
     except (KeyboardInterrupt, click.exceptions.Abort):
         print("Exiting...")
     finally:

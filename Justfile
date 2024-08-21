@@ -1,4 +1,4 @@
-@default: lint
+@default: lint test
 
 @init:
     poetry install
@@ -17,5 +17,8 @@
     poetry run ruff format .
     poetry run ruff check --fix .
 
-@push: lint
+@test:
+    poetry run pytest tests
+
+@push: lint test
     git push

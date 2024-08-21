@@ -1,5 +1,6 @@
-from typing import Any
+from typing import Any, Callable, Iterable, List
 
+from langchain_core.documents import Document
 from langchain_text_splitters.character import RecursiveCharacterTextSplitter
 
 # Logseq markdown files are primarly composed of bulleted lists
@@ -17,13 +18,28 @@ SEPERATORS = [
 
 
 class LogseqMarkdownSplitter(RecursiveCharacterTextSplitter):
-    """Splits Logseq data files into chunks."""
+    """Splits Logseq markdown files into chunks."""
 
-    def __init__(self, **kwargs: Any) -> None:
-        """Initialize a LogseqTextSplitter."""
+    def __init__(self, id_func: Callable[[Document], str], **kwargs: Any) -> None:
+        """Initialize a LogseqTextSplitter.
+
+        id_func is a function that takes a Document and returns a unique ID for that
+        document. This should be a feature of the Document class, but it's not."""
+
+        self.id_func = id_func
         super().__init__(
             separators=SEPERATORS,
             is_separator_regex=True,
             keep_separator=True,
             **kwargs,
         )
+
+    def split_documents(self, documents: Iterable[Document]) -> List[Document]:
+        """
+        Split documents into chunks of the configured max size. The id field of each
+        returned chunk will be set to a hash of the chunk's content and metadata.
+        """
+        chunks = super().split_documents(documents)
+        for chunk in chunks:
+            chunk.id = self.id_func(chunk)
+        return chunks
