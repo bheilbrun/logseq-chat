@@ -1,15 +1,10 @@
 import math
+import re
 from collections import Counter, defaultdict
 from threading import Lock
-from typing import Callable, Dict, Iterable, List, Tuple
+from typing import Dict, Iterable, List, Tuple
 
 from langchain_core.documents import Document
-
-
-def default_tokenize_func(text: str) -> List[str]:
-    """Super dumb tokenization function which lowers and splits on whitespace.
-    TODO: make this better, e.g. stemming, stop word removal."""
-    return text.lower().split()
 
 
 class IncrementalBM25:
@@ -27,13 +22,12 @@ class IncrementalBM25:
         self,
         k1: float = 1.5,
         b: float = 0.75,
-        tokenize_func: Callable[[str], List[str]] = default_tokenize_func,
     ) -> None:
         # BM25 parameters - https://en.wikipedia.org/wiki/Okapi_BM25
         self.k1 = k1
         self.b = b
 
-        self.tokenize_func = tokenize_func
+        self.tokenizer: Tokenizer = Tokenizer()
 
         # Ensure thread safety of below internal state.
         self._lock = Lock()
@@ -70,7 +64,7 @@ class IncrementalBM25:
             raise ValueError(f"Document with id {doc.id} already exists.")
 
         # TODO: Index metadata as well.
-        tokenized_doc = self.tokenize_func(doc.page_content)
+        tokenized_doc = self.tokenizer.tokenize(doc.page_content)
         doc_len = len(tokenized_doc)
         term_freqs = Counter(tokenized_doc)
 
@@ -127,7 +121,7 @@ class IncrementalBM25:
     def _get_scores(self, query: str) -> List[Tuple[str, float]]:
         """Returns the score for every document in the index for the given query.
         Must be called with self._lock acquired."""
-        query_terms = self.tokenize_func(query)
+        query_terms = self.tokenizer.tokenize(query)
         scores: Dict[str, float] = defaultdict(float)
         for q in query_terms:
             q_idf = self.idf.get(q, 0)
@@ -156,3 +150,104 @@ class IncrementalBM25:
                 self._update_idf()
             scores = self._get_scores(query)
         return sorted(scores, key=lambda x: x[1], reverse=True)[:k]
+
+
+class Tokenizer:
+    """A simple English-focused tokenizer. Its only dependency is the re module."""
+
+    def tokenize(self, text: str) -> List[str]:
+        """
+        Tokenize and preprocess the input text using a language-agnostic approach.
+
+        Steps:
+        1. Convert to lowercase
+        2. Split on non-alphanumeric characters (e.g. spaces, punctuation)
+        4. Remove stop words and very short tokens
+
+        Args:
+        text (str): The input text to tokenize and preprocess.
+
+        Returns:
+        List[str]: A list of preprocessed tokens.
+        """
+        # Convert to lowercase
+        text = text.lower()
+
+        tokens = re.split(r"\W+", text)
+
+        # Remove stop words and very short tokens
+        tokens = [
+            token for token in tokens if token not in STOP_WORDS and len(token) > 1
+        ]
+
+        return tokens
+
+
+# Copied from spaCy's set of English stop words.
+# https://github.com/explosion/spaCy/blob/master/spacy/lang/en/stop_words.py
+# This version doesn't handle apostrophes or contractions.
+STOP_WORDS = set(
+    """
+a about above across after afterwards again against all almost alone along
+already also although always am among amongst amount an and another any anyhow
+anyone anything anyway anywhere are around as at
+
+back be became because become becomes becoming been before beforehand behind
+being below beside besides between beyond both bottom but by
+
+call can cannot ca could
+
+did do does doing done down due during
+
+each eight either eleven else elsewhere empty enough even ever every
+everyone everything everywhere except
+
+few fifteen fifty first five for former formerly forty four from front full
+further
+
+get give go
+
+had has have he hence her here hereafter hereby herein hereupon hers herself
+him himself his how however hundred
+
+i if in indeed into is it its itself
+
+keep
+
+last latter latterly least less
+
+just
+
+made make many may me meanwhile might mine more moreover most mostly move much
+must my myself
+
+name namely neither never nevertheless next nine no nobody none noone nor not
+nothing now nowhere
+
+of off often on once one only onto or other others otherwise our ours ourselves
+out over own
+
+part per perhaps please put
+
+quite
+
+rather re really regarding
+
+same say see seem seemed seeming seems serious several she should show side
+since six sixty so some somehow someone something sometime sometimes somewhere
+still such
+
+take ten than that the their them themselves then thence there thereafter
+thereby therefore therein thereupon these they third this those though three
+through throughout thru thus to together too top toward towards twelve twenty
+two
+
+under until up unless upon us used using
+
+various very very via was we well were what whatever when whence whenever where
+whereafter whereas whereby wherein whereupon wherever whether which while
+whither who whoever whole whom whose why will with within without would
+
+yet you your yours yourself yourselves
+""".split()
+)
