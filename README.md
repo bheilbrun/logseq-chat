@@ -2,13 +2,16 @@
 
 A CLI tool for chatting with an LLM about your [Logseq](https://logseq.com/) notes.
 
-Logseq's journal-style note taking encourages creating a lot of notes. An LLM can help sift through them.
+Logseq's journal-style note taking encourages writing a lot of notes.
+Sifting through them all takes time, but an LLM can help.
 
 The LLM is prompted with the most relevant notes to your query as well as the prior chat history.
+Relevant notes are retrieved using similarity search (via embeddings) and full-text search (via [BM25](https://en.wikipedia.org/wiki/Okapi_BM25)).
+The results of the two searches are combined using [Reciprocal Rank Fusion](https://plg.uwaterloo.ca/~gvcormac/cormacksigir09-rrf.pdf).
 
 Changed files are re-indexed in the background. This allows the tool to have access to recent changes without restarting.
 
-This is largely a toy project powered by LangChain calls. Still, I've found it useful.
+This is a toy project powered by some LangChain calls and my own hackery. Still, I've found it useful.
 
 ## Example
 
@@ -55,7 +58,6 @@ API keys can be placed in a `.env` file in the project root or passed as environ
 - de-bounce indexing of changed files.
 - include metadata (logseq properties) in embedded content.
 - improve storage/caching of embeddings. generally, unified storage.
-- hybrid search via BM25 or similar, to improve keyword-based retrieval.
 - re-rank/fuse hybrid search results.
 - add Voyage AI embeddings support.
 - progress bar for embedding generation.

@@ -1,7 +1,7 @@
 import pytest
 from langchain_core.documents import Document
 
-from logseq_chat.bm25 import IncrementalBM25
+from logseq_chat.bm25 import IncrementalBM25, Tokenizer
 
 
 @pytest.fixture
@@ -50,3 +50,21 @@ def test_non_existent_search(bm25_instance: IncrementalBM25) -> None:
     results = bm25_instance.search("nonexistent", k=1)
 
     assert len(results) == 0
+
+
+def test_tokenizer() -> None:
+    tokenizer = Tokenizer()
+    text = "The NVIDIA H100 GPU performs 4x faster than previous models!"
+
+    tokens = tokenizer.tokenize(text)
+
+    assert tokens == [
+        "nvidia",
+        "h100",
+        "gpu",
+        "performs",
+        "4x",
+        "faster",
+        "previous",
+        "models",
+    ]

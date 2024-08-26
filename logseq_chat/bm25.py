@@ -13,9 +13,14 @@ class IncrementalBM25:
 
     Adding and removing documents is O(n) in the number of terms in the document.
 
-    Search is O(n) where n in the number of terms in the query. If any documents have
-    changed since the last search, it is O(n+m) where m is the number of terms in the
-    corpus. This is because the BM25 IDF values are updated at search time.
+    Search is O(N * Q), where N is the number of documents and Q is the number of terms
+    in the query. Note that if any documents have changed since the last search, we
+    also update the BM25 IDF values, so the real worst-case complexity is something
+    like O(max(T, Q * N)), where T is the number of numbers in the corpus.
+
+    Storage (memory) cost is roughly O(T + N), where T is the number of unique terms in
+    the corpus and N is the number of documents. Raw document contents are not stored
+    but instead the frequency of the terms in each document.
     """
 
     def __init__(
@@ -170,9 +175,7 @@ class Tokenizer:
         Returns:
         List[str]: A list of preprocessed tokens.
         """
-        # Convert to lowercase
         text = text.lower()
-
         tokens = re.split(r"\W+", text)
 
         # Remove stop words and very short tokens
