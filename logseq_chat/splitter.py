@@ -17,10 +17,22 @@ SEPERATORS = [
 ]
 
 
+# Default chunk size for splitting Logseq data.
+# Measured in "characters" as defined by Python len() function.
+# Note: there are roughly 4 chars per token in English text.
+DEFAULT_CHUNK_SIZE_CHARS = 4096
+
+
 class LogseqMarkdownSplitter(RecursiveCharacterTextSplitter):
     """Splits Logseq markdown files into chunks."""
 
-    def __init__(self, id_func: Callable[[Document], str], **kwargs: Any) -> None:
+    def __init__(
+        self,
+        id_func: Callable[[Document], str],
+        chunk_size: int = DEFAULT_CHUNK_SIZE_CHARS,
+        chunk_overlap: int = 0,
+        **kwargs: Any,
+    ) -> None:
         """Initialize a LogseqTextSplitter.
 
         id_func is a function that takes a Document and returns a unique ID for that
@@ -31,6 +43,8 @@ class LogseqMarkdownSplitter(RecursiveCharacterTextSplitter):
             separators=SEPERATORS,
             is_separator_regex=True,
             keep_separator=True,
+            chunk_size=chunk_size,
+            chunk_overlap=chunk_overlap,
             **kwargs,
         )
 

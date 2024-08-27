@@ -46,21 +46,20 @@ poetry run logseq_chat --data-dir="${HOME}/logseq-data"
 
 - Pre-existing Logseq data in markdown format
 - Python 3.x (tested with 3.11)
-- OpenAI API Key (used for chat and embeddings). 
+- API key for one or multiple of: OpenAI; Anthropic; Voyage
 
-Anthropic is also supported for the LLM calls.
+Embeddings are provided by OpenAI or Voyage; Chat is provided by OpenAI or Anthropic.
 
 API keys can be placed in a `.env` file in the project root or passed as environment variables (e.g. `OPENAI_API_LEY=sk-foo`).
 
 ## TODOs
 
-- tests
 - de-bounce indexing of changed files.
 - include metadata (logseq properties) in embedded content.
 - improve storage/caching of embeddings. generally, unified storage.
-- re-rank/fuse hybrid search results.
-- add Voyage AI embeddings support.
+- consider using a re-ranker instead of RRF to fuse search results.
 - progress bar for embedding generation.
 - configurable model (beyond choosing provider).
 - prompt tuning to encourage brevity but still retain details.
 - handle long chat histories; store them.
+- more testing

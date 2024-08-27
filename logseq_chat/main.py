@@ -2,7 +2,7 @@ import logging
 import os
 import textwrap
 from hashlib import sha256
-from typing import List
+from typing import List, Union
 
 import click
 import faiss
@@ -22,6 +22,7 @@ from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_text_splitters import TextSplitter
+from langchain_voyageai.embeddings import VoyageAIEmbeddings
 from watchdog.observers import Observer
 from watchdog.observers.api import BaseObserver
 
@@ -69,12 +70,6 @@ def doc_id_func(doc: Document) -> str:
     return sha256(doc.json(exclude={"id"}).encode()).hexdigest()
 
 
-# Default chunk size for splitting Logseq data.
-# Measured in "characters" as defined by Python len() function.
-# Note: there are roughly 4 chars per token in English text.
-DEFAULT_CHUNK_SIZE_CHARS = 4096
-
-
 def split_docs(splitter: TextSplitter, docs: List[Document]) -> List[Document]:
     """Split a list of documents into chunks."""
     chunks = splitter.split_documents(docs)
@@ -82,26 +77,47 @@ def split_docs(splitter: TextSplitter, docs: List[Document]) -> List[Document]:
     return chunks
 
 
-MODEL_NAME = "text-embedding-3-small"
-MODEL_DIM = 1536
+EMBEDDING_MODEL_DIMS = {
+    "text-embedding-3-small": 1536,
+    "voyage-large-2-instruct": 1024,
+}
+
+
+def get_embedder() -> Union[OpenAIEmbeddings, VoyageAIEmbeddings]:
+    """
+    Checks for API keys in the environment and returns an appropriate Embedding impl.
+    Returns a Union instead of the base class because both concrete impls expose
+    the 'model' attribute.
+    """
+    if os.environ.get("VOYAGE_API_KEY"):
+        # Lint ignored because VoyageAIEmbeddings fields don't have default values and
+        # this confuses mypy and pyright.
+        return VoyageAIEmbeddings(model="voyage-large-2-instruct")  # type: ignore
+    if os.environ.get("OPENAI_API_KEY"):
+        return OpenAIEmbeddings(model="text-embedding-3-small")
+
+    raise ValueError("No API key found for OpenAI or VoyageAI")
 
 
 def get_vector_store(
-    model_name: str = MODEL_NAME, model_dim: int = MODEL_DIM
+    embedder: Union[OpenAIEmbeddings, VoyageAIEmbeddings],
 ) -> VectorStore:
-    embeddings_model = OpenAIEmbeddings(model=model_name)
+    """
+    Returns a Langchain VectorStore for the given embedding impl.
+    Document vectors are cached to disk.
+    """
     store = LocalFileStore(".cache")
     # Caches document embeddings to disk. Does not cache queries.
     # TODO: inefficient and eternal. Replace.
     cached_embedder = CacheBackedEmbeddings.from_bytes_store(
-        embeddings_model,
+        embedder,
         store,
-        namespace=embeddings_model.model,
+        namespace=embedder.model,
     )
     # TODO: Add metadata to the embedded content. FAISS only embeds the page_content.
     vector_store = FAISS(
         cached_embedder,
-        index=faiss.IndexFlatL2(model_dim),
+        index=faiss.IndexFlatL2(EMBEDDING_MODEL_DIMS[embedder.model]),
         docstore=InMemoryDocstore(),
         index_to_docstore_id={},
         distance_strategy=DistanceStrategy.COSINE,
@@ -166,6 +182,8 @@ def _format_docs(docs: List[Document]) -> str:
 # https://python.langchain.com/v0.2/docs/tutorials/rag
 # Anthropic prompt library "Cite your sources",
 # https://docs.anthropic.com/en/prompt-library/cite-your-sources
+# TODO: Use XML tags when calling Anthropic, per
+# https://docs.anthropic.com/en/docs/build-with-claude/prompt-engineering/use-xml-tags
 SYSTEM_PROMPT = (
     "You are an expert assistant for question-answering tasks. "
     "Use the chat history and the following context to answer the question. "
@@ -289,12 +307,10 @@ def interactive_loop(search_index: HybridSearchIndex) -> None:
 def main(data_dir: str, glob: str, verbose: bool, debug: bool) -> None:
     load_dotenv()
     set_verbosity(verbose, debug)
-    vector_store = get_vector_store()
+    embedder = get_embedder()
+    vector_store = get_vector_store(embedder)
     search_index = HybridSearchIndex(vector_store, doc_id_func)
-    # record_manager = get_record_manager(vector_store)
-    splitter = LogseqMarkdownSplitter(
-        id_func=doc_id_func, chunk_size=DEFAULT_CHUNK_SIZE_CHARS, chunk_overlap=0
-    )
+    splitter = LogseqMarkdownSplitter(id_func=doc_id_func)
     observer = schedule_observer(
         search_index,
         splitter,
