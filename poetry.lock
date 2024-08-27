@@ -2404,6 +2404,19 @@ pymysql = ["pymysql"]
 sqlcipher = ["sqlcipher3_binary"]
 
 [[package]]
+name = "sqlite-vec"
+version = "0.1.1"
+description = ""
+optional = false
+python-versions = "*"
+files = [
+    {file = "sqlite_vec-0.1.1-py3-none-macosx_10_6_x86_64.whl", hash = "sha256:a57ad382338d747490b7ea249a28615f17d657b06a2db9147c15490f5b7a7146"},
+    {file = "sqlite_vec-0.1.1-py3-none-macosx_11_0_arm64.whl", hash = "sha256:10e0b6c3ff6bb4fcd4dbd81acb1267c56e0f4b16b82f9426fe6e2b7f3f5a05e4"},
+    {file = "sqlite_vec-0.1.1-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.manylinux1_x86_64.whl", hash = "sha256:069b0f827d59d0edd95cbd725e524cd2c27d0ef075da6b66829006d67134aa14"},
+    {file = "sqlite_vec-0.1.1-py3-none-win_amd64.whl", hash = "sha256:e191aa6138303e79e00d5b79a49ba94e322671dd18f8d69ed90f92f709667a0e"},
+]
+
+[[package]]
 name = "stack-data"
 version = "0.6.3"
 description = "Extract data from python stack frames and tracebacks for informative displays"
@@ -2883,4 +2896,4 @@ multidict = ">=4.0"
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.11"
-content-hash = "8ea2fa5655d73bac1c90bdc5a23497193c178358443e7a4a5e23da1b4c98df14"
+content-hash = "23bd4d724a3eaabdc42a4beb8e2811676654b43b3bc9edf521bb5c2d167cbd50"

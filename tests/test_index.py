@@ -1,10 +1,9 @@
 import pytest
 from langchain_community.embeddings import FakeEmbeddings
-from langchain_community.vectorstores import InMemoryVectorStore
 from langchain_core.documents import Document
 
 from logseq_chat.index import HybridSearchIndex
-from logseq_chat.main import doc_id_func
+from logseq_chat.vector import SQLiteVecVectorIndex
 
 
 def create_document(id: str, content: str, metadata: dict) -> Document:
@@ -13,8 +12,12 @@ def create_document(id: str, content: str, metadata: dict) -> Document:
 
 @pytest.fixture
 def hybrid_search_index() -> HybridSearchIndex:
-    vector_store = InMemoryVectorStore(FakeEmbeddings(size=2000))
-    return HybridSearchIndex(vector_store, id_func=doc_id_func)
+    vector_store = SQLiteVecVectorIndex(
+        namespace="testing",
+        embedding=FakeEmbeddings(size=16),
+        embedding_dim=16,
+    )
+    return HybridSearchIndex(vector_store)
 
 
 def test_add_documents(hybrid_search_index: HybridSearchIndex) -> None:

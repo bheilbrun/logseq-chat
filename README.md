@@ -10,8 +10,15 @@ Relevant notes are retrieved using similarity search (via embeddings) and full-t
 The results of the two searches are combined using [Reciprocal Rank Fusion](https://plg.uwaterloo.ca/~gvcormac/cormacksigir09-rrf.pdf).
 
 Changed files are re-indexed in the background. This allows the tool to have access to recent changes without restarting.
+The downside is that it costs money (tokens) while it's running and notes are changing.
 
-This is a toy project powered by some LangChain calls and my own hackery. Still, I've found it useful.
+Similarity search is provided by [sqlite-vec](https://alexgarcia.xyz/sqlite-vec/). BM25 support is hand-crafted.
+
+Embeddings are generated using OpenAI or Voyage AI. The latter has better quality and takes up less space. That said, the difference is likely not noticeable.
+
+Chat is powered by OpenAI or Anthropic. The prompts aren't optimized for Anthropic Claude yet.
+
+In summary, this is a toy project powered by some LangChain calls and my own hackery. Still, I've found it useful.
 
 ## Example
 
@@ -48,7 +55,9 @@ poetry run logseq_chat --data-dir="${HOME}/logseq-data"
 - Python 3.x (tested with 3.11)
 - API key for one or multiple of: OpenAI; Anthropic; Voyage
 
-Embeddings are provided by OpenAI or Voyage; Chat is provided by OpenAI or Anthropic.
+If Voyage API keys are available, Voyage will be used for embeddings. Otherwise, OpenAI will be used.
+
+If Anthropic API keys are available, Anthropic will be used for chat. Otherwise, OpenAI will be used.
 
 API keys can be placed in a `.env` file in the project root or passed as environment variables (e.g. `OPENAI_API_LEY=sk-foo`).
 
@@ -56,10 +65,10 @@ API keys can be placed in a `.env` file in the project root or passed as environ
 
 - de-bounce indexing of changed files.
 - include metadata (logseq properties) in embedded content.
-- improve storage/caching of embeddings. generally, unified storage.
-- consider using a re-ranker instead of RRF to fuse search results.
+- consider using a re-ranking model instead of RRF to fuse search results.
 - progress bar for embedding generation.
 - configurable model (beyond choosing provider).
 - prompt tuning to encourage brevity but still retain details.
+- Anthropic-specific prompt tuning.
 - handle long chat histories; store them.
-- more testing
+- testing, always more testing.

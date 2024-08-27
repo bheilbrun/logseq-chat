@@ -30,6 +30,7 @@ from logseq_chat.event_handler import IndexingEventHandler
 from logseq_chat.index import HybridSearchIndex
 from logseq_chat.loader import LogseqMarkdownLoader
 from logseq_chat.splitter import LogseqMarkdownSplitter
+from logseq_chat.vector import SQLiteVecVectorIndex
 
 _verbose = False
 _debug = False
@@ -64,9 +65,13 @@ def load_dir(data_dir: str, glob: str) -> List[Document]:
 
 
 def doc_id_func(doc: Document) -> str:
-    """Hash a document. Excludes the id field to allow for stable id generation.
+    """
+    Hash a document's contents for the purposes of generating a stable unique id.
+
     This should be a feature of the Document class, but it's not. If it's
-    replaced with a local abstraction that can be fixed."""
+    replaced with a local abstraction that can be fixed.
+    """
+    # exclude the 'id' field to ensure the results are stable.
     return sha256(doc.json(exclude={"id"}).encode()).hexdigest()
 
 
@@ -308,8 +313,14 @@ def main(data_dir: str, glob: str, verbose: bool, debug: bool) -> None:
     load_dotenv()
     set_verbosity(verbose, debug)
     embedder = get_embedder()
-    vector_store = get_vector_store(embedder)
-    search_index = HybridSearchIndex(vector_store, doc_id_func)
+    os.makedirs(".cache", exist_ok=True)
+    vector_index = SQLiteVecVectorIndex(
+        namespace=embedder.model,
+        embedding=embedder,
+        embedding_dim=EMBEDDING_MODEL_DIMS[embedder.model],
+        db_path=".cache/vector_index.db",
+    )
+    search_index = HybridSearchIndex(vector_index)
     splitter = LogseqMarkdownSplitter(id_func=doc_id_func)
     observer = schedule_observer(
         search_index,

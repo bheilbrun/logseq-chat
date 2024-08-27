@@ -1,12 +1,12 @@
 from abc import ABC, abstractmethod
 from collections import defaultdict
 from pathlib import Path
-from typing import Callable, Dict, Iterable, List, Set, Tuple, Union
+from typing import Dict, Iterable, List, Set, Tuple, Union
 
-from langchain_community.vectorstores import VectorStore
 from langchain_core.documents import Document
 
 from logseq_chat.bm25 import IncrementalBM25
+from logseq_chat.vector import VectorIndex
 
 
 class SearchIndex(ABC):
@@ -33,17 +33,13 @@ class HybridSearchIndex(SearchIndex):
 
     def __init__(
         self,
-        vector_store: VectorStore,
-        id_func: Callable[[Document], str],
+        vector_index: VectorIndex,
     ):
         self.doc_store: Dict[str, Document] = {}
         self.path_to_doc_ids: Dict[str, Set[str]] = defaultdict(set)
 
-        # For now, we're using a Langchain VectorStore which manages its own
-        # docstore. The plan is to refactor and use the above shared docstore.
-        self.vector_store = vector_store
-        self.id_func = id_func
-
+        self.vector_index = vector_index
+        # simple enough dep we don't need to use dependency injection.
         self.bm25_index = IncrementalBM25()
 
     def add_documents(self, documents: Iterable[Document]) -> None:
@@ -57,7 +53,7 @@ class HybridSearchIndex(SearchIndex):
             self.path_to_doc_ids[source].add(id)
 
         self.bm25_index.add_documents(documents)
-        self.vector_store.add_documents(list(documents))
+        self.vector_index.add_documents(documents)
 
     def remove_documents_by_path(self, path: Union[str, Path]) -> None:
         """Remove documents with the given file paths from the index."""
@@ -66,7 +62,7 @@ class HybridSearchIndex(SearchIndex):
             return
 
         self.bm25_index.remove_documents(doc_ids)
-        self.vector_store.delete(list(doc_ids))
+        self.vector_index.remove_documents(list(doc_ids))
         for doc_id in doc_ids:
             self.doc_store.pop(doc_id)
 
@@ -77,15 +73,10 @@ class HybridSearchIndex(SearchIndex):
         """
         over_sampling = 2
         bm25_results = self.bm25_index.search(query, k * over_sampling)
-        vector_results = self.vector_store.similarity_search_with_score(
-            query, k * over_sampling
-        )
+        vector_results = self.vector_index.search(query, k * over_sampling)
 
         bm25_ids = [doc_id for doc_id, _ in bm25_results]
-        # Langchain vector store returns concrete documents and the FAISS impl
-        # unintentionally loses the document ID. So we need to reconstitue it.
-        # This hack will slough away when we rewrite the vector store.
-        vector_ids = [doc.id or self.id_func(doc) for doc, _ in vector_results]
+        vector_ids = [doc_id for doc_id, _ in vector_results]
 
         # Combine the results from both BM25 and vector similarity.
         fused_ranking = self._reciprocal_rank_fusion(bm25_ids, vector_ids, k)
