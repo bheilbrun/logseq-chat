@@ -5,16 +5,10 @@ from hashlib import sha256
 from typing import List, Union
 
 import click
-import faiss
 from dotenv import load_dotenv
-from langchain.embeddings import CacheBackedEmbeddings
 from langchain.globals import set_debug, set_verbose
-from langchain.storage import LocalFileStore
 from langchain_anthropic import ChatAnthropic
-from langchain_community.docstore.in_memory import InMemoryDocstore
 from langchain_community.document_loaders import DirectoryLoader
-from langchain_community.vectorstores import FAISS, VectorStore
-from langchain_community.vectorstores.utils import DistanceStrategy
 from langchain_core.chat_history import InMemoryChatMessageHistory
 from langchain_core.documents import Document
 from langchain_core.language_models.chat_models import BaseChatModel
@@ -102,32 +96,6 @@ def get_embedder() -> Union[OpenAIEmbeddings, VoyageAIEmbeddings]:
         return OpenAIEmbeddings(model="text-embedding-3-small")
 
     raise ValueError("No API key found for OpenAI or VoyageAI")
-
-
-def get_vector_store(
-    embedder: Union[OpenAIEmbeddings, VoyageAIEmbeddings],
-) -> VectorStore:
-    """
-    Returns a Langchain VectorStore for the given embedding impl.
-    Document vectors are cached to disk.
-    """
-    store = LocalFileStore(".cache")
-    # Caches document embeddings to disk. Does not cache queries.
-    # TODO: inefficient and eternal. Replace.
-    cached_embedder = CacheBackedEmbeddings.from_bytes_store(
-        embedder,
-        store,
-        namespace=embedder.model,
-    )
-    # TODO: Add metadata to the embedded content. FAISS only embeds the page_content.
-    vector_store = FAISS(
-        cached_embedder,
-        index=faiss.IndexFlatL2(EMBEDDING_MODEL_DIMS[embedder.model]),
-        docstore=InMemoryDocstore(),
-        index_to_docstore_id={},
-        distance_strategy=DistanceStrategy.COSINE,
-    )
-    return vector_store
 
 
 def get_llm() -> BaseChatModel:
