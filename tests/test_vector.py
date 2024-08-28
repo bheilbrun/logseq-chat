@@ -1,5 +1,5 @@
 import pytest
-from langchain_community.embeddings import FakeEmbeddings
+from langchain_community.embeddings import DeterministicFakeEmbedding
 from langchain_core.documents import Document
 
 from logseq_chat.vector import SQLiteVecVectorIndex
@@ -9,7 +9,7 @@ from logseq_chat.vector import SQLiteVecVectorIndex
 def vector_index() -> SQLiteVecVectorIndex:
     return SQLiteVecVectorIndex(
         namespace="test",
-        embedding=FakeEmbeddings(size=16),
+        embedding=DeterministicFakeEmbedding(size=16),
         embedding_dim=16,
     )
 
@@ -52,8 +52,8 @@ def test_search(vector_index: SQLiteVecVectorIndex) -> None:
 
     results = vector_index.search("red", k=2)
     assert len(results) == 2
-    assert results[0][0] == "r"  # "red" should be the closest match
-    assert results[1][0] in ["g", "b"]  # Either "green" or "blue"
+    assert results[0][0] == "r"
+    assert results[1][0] in ["g", "b"]
 
 
 def test_add_existing_document(vector_index: SQLiteVecVectorIndex) -> None:

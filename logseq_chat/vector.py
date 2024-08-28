@@ -67,16 +67,19 @@ class SQLiteVecVectorIndex(VectorIndex):
             )
         """
         )
+        # Index for fast lookups by doc_id
         cursor.execute(
             f"""
             CREATE INDEX IF NOT EXISTS idx_{self.namespace}_doc_id 
             ON {self.namespace}_metadata(doc_id)
         """
         )
+        # Cosine is slightly cheaper to compute than L2 distance.
+        # OpenAI and Voyage say that L2 and Cosine rankings will be equivalent.
         cursor.execute(
             f"""
             CREATE VIRTUAL TABLE IF NOT EXISTS {self.namespace}_embeddings 
-            USING vec0(embedding FLOAT[{self.embedding_dim}])
+            USING vec0(embedding FLOAT[{self.embedding_dim}] distance_metric=cosine)
         """
         )
         self.conn.commit()
@@ -159,40 +162,22 @@ class SQLiteVecVectorIndex(VectorIndex):
         """
         query_embedding = self.embedding.embed_query(query)
         cursor = self.conn.cursor()
-
-        # TODO: use cosine similarity
-
-        # First, perform the vector search as a separate query.
-        # sqlite_vec requires a LIMIT directly on its queries.
-        vector_results = cursor.execute(
+        results = cursor.execute(
             f"""
             SELECT 
-                rowid,
-                distance
-            FROM {self.namespace}_embeddings
-            WHERE embedding MATCH ?
-            ORDER BY distance
-            LIMIT ?
+                m.doc_id,
+                e.distance
+            FROM {self.namespace}_embeddings e
+            JOIN {self.namespace}_metadata m ON e.rowid = m.vector_id
+            WHERE
+                e.embedding MATCH ?
+                AND k = ?
+            ORDER BY e.distance
         """,
             (sqlite_vec.serialize_float32(query_embedding), k),
         ).fetchall()
 
-        if not vector_results:
-            return []
-
-        # Then, fetch the corresponding metadata
-        vectors = {str(result[0]): result[1] for result in vector_results}
-        placeholders = ",".join("?" for _ in vectors.keys())
-        metadata_results = cursor.execute(
-            f"""
-            SELECT vector_id, doc_id
-            FROM {self.namespace}_metadata
-            WHERE vector_id IN ({placeholders})
-        """,
-            list(vectors.keys()),
-        ).fetchall()
-
-        return [(row[1], vectors[str(row[0])]) for row in metadata_results]
+        return [(row[0], row[1]) for row in results]
 
     def __del__(self) -> None:
         if hasattr(self, "conn"):
