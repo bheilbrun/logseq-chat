@@ -18,7 +18,7 @@ Embeddings are generated using OpenAI or Voyage AI. The latter has better qualit
 
 Chat is powered by OpenAI or Anthropic. The prompts aren't optimized for Anthropic Claude yet.
 
-In summary, this is a toy project powered by some LangChain calls and my own hackery. Still, I've found it useful.
+Note, this is a toy project which I've found to be useful.
 
 ## Example
 
